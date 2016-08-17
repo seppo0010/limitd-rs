@@ -7,6 +7,7 @@ use std::net::ToSocketAddrs;
 use std::env;
 
 use getopts::Options;
+use log::LogLevel;
 
 enum Protocol {
     ProtocolBuffer,
@@ -15,7 +16,7 @@ enum Protocol {
 
 struct Settings {
     addr: SocketAddr,
-    log_level: log::LogLevel,
+    log_level: LogLevel,
     protocol: Protocol,
     db: String,
     config: Option<String>,
@@ -35,6 +36,7 @@ fn main() {
 
     let mut opts = Options::new();
     opts.optopt("d", "db", "set output file name", "DATABASE");
+    opts.optopt("l", "log-level", "Log level [INFO]", "LOG-LEVEL");
     opts.optopt("p", "port", "Port to bind [9231]", "PORT");
     opts.optopt("h", "hostname", "Hostname to bind [0.0.0.0]", "HOSTNAME");
     opts.optopt("c", "config-file", "Configuration file", "CONFIG");
@@ -49,10 +51,17 @@ fn main() {
     let port: u16 = matches.opt_str("p").and_then(|x| x.parse().ok()).unwrap_or(9231);
     let settings = Settings {
         addr: (&*matches.opt_str("h").unwrap_or("0.0.0.0".to_owned()), port).to_socket_addrs().unwrap().next().unwrap(),
-        log_level: log::LogLevel::Info,
         protocol: if matches.opt_present("avro") { Protocol::Avro } else { Protocol::ProtocolBuffer },
         db: matches.opt_str("d").unwrap(),
         config: matches.opt_str("c"),
         profile: matches.opt_present("profile"),
+        log_level: match &*matches.opt_str("l").unwrap_or("info".to_owned()) {
+            "fatal" => LogLevel::Error,
+            "error" => LogLevel::Error,
+            "warn" => LogLevel::Warn,
+            "debug" => LogLevel::Debug,
+            "trace" => LogLevel::Trace,
+            _ => LogLevel::Info,
+        }
     };
 }
