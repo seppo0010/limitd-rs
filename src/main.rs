@@ -1,5 +1,6 @@
-extern crate log;
 extern crate getopts;
+extern crate log;
+extern crate time;
 
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
@@ -19,6 +20,14 @@ struct Settings {
     db: String,
     config: Option<String>,
     profile: bool,
+}
+
+struct Bucket {
+    name: String,
+    perSecond: u64,
+    purpose: Option<String>,
+    size: u64,
+    until: Option<time::Tm>,
 }
 
 fn main() {
