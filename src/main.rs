@@ -1,4 +1,7 @@
 extern crate env_logger;
+extern crate futures;
+extern crate futures_io;
+extern crate futures_mio;
 extern crate getopts;
 #[macro_use]
 extern crate log;
@@ -11,6 +14,9 @@ use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::env;
 
+use futures::Future;
+use futures_io::{copy, TaskIo};
+use futures::stream::Stream;
 use getopts::Options;
 use log::LogLevel;
 use protocol_protobuf::request::Request;
@@ -59,8 +65,9 @@ fn main() {
     builder.init().unwrap();
 
     let port: u16 = matches.opt_str("p").and_then(|x| x.parse().ok()).unwrap_or(9231);
+    let addr = (&*matches.opt_str("h").unwrap_or("0.0.0.0".to_owned()), port).to_socket_addrs().unwrap().next().unwrap();
     let settings = Settings {
-        addr: (&*matches.opt_str("h").unwrap_or("0.0.0.0".to_owned()), port).to_socket_addrs().unwrap().next().unwrap(),
+        addr: addr.clone(),
         protocol: if matches.opt_present("avro") { Protocol::Avro } else { Protocol::ProtocolBuffer },
         db: matches.opt_str("d").unwrap(),
         config: matches.opt_str("c"),
