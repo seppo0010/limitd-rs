@@ -1,5 +1,7 @@
 extern crate env_logger;
+#[macro_use]
 extern crate futures;
+#[macro_use]
 extern crate futures_io;
 extern crate futures_mio;
 extern crate getopts;
@@ -9,18 +11,21 @@ extern crate protobuf;
 extern crate time;
 
 mod protocol_protobuf;
+mod io2;
 
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::env;
 
 use futures::Future;
-use futures_io::{copy, TaskIo};
 use futures::stream::Stream;
+use futures_io::{copy, TaskIo};
 use getopts::Options;
 use log::LogLevel;
 use protocol_protobuf::request::Request;
 use protocol_protobuf::response::Response;
+
+use io2::Parse;
 
 enum Protocol {
     ProtocolBuffer,
