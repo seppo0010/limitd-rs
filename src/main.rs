@@ -1,6 +1,9 @@
 extern crate getopts;
 extern crate log;
+extern crate protobuf;
 extern crate time;
+
+mod protocol_protobuf;
 
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
@@ -8,6 +11,8 @@ use std::env;
 
 use getopts::Options;
 use log::LogLevel;
+use protocol_protobuf::request::Request;
+use protocol_protobuf::response::Response;
 
 enum Protocol {
     ProtocolBuffer,
