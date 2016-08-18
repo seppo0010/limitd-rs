@@ -14,24 +14,14 @@ mod protocol_protobuf;
 mod io2;
 
 use std::env;
-use std::io;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
-use std::sync::Arc;
 
 use futures::Future;
 use futures::stream::Stream;
 use futures_io::{copy, TaskIo};
 use getopts::Options;
 use log::LogLevel;
-use protobuf::parse_from_bytes;
-use protobuf::Message;
-use protobuf::ProtobufError;
-
-use protocol_protobuf::request::Request;
-use protocol_protobuf::response::Response;
-
-use io2::Parse;
 
 enum Protocol {
     ProtocolBuffer,
@@ -52,27 +42,6 @@ struct Bucket {
     purpose: Option<String>,
     size: u64,
     until: Option<time::Tm>,
-}
-
-impl Parse for Request {
-    type Parser = ();
-    type Error = io::Error;
-    fn parse(_: &mut (),
-        buf: &Arc<Vec<u8>>,
-        offset: usize)
-    -> Option<Result<(Request, usize), io::Error>> {
-        match parse_from_bytes::<Request>(&***buf) {
-            Ok(m) => {
-                let size = m.compute_size() as usize;
-                Some(Ok((m, size)))
-            },
-            Err(e) => match e {
-                ProtobufError::WireError(_) => None,
-                ProtobufError::MessageNotInitialized { message: _ } => None,
-                ProtobufError::IoError(e) => Some(Err(e)),
-            },
-        }
-    }
 }
 
 fn main() {
