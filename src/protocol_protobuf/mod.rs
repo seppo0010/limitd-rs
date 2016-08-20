@@ -4,14 +4,12 @@ pub mod response;
 use std::io;
 use std::sync::Arc;
 
-use protobuf::parse_from_bytes;
-use protobuf::Message;
+use protobuf::CodedInputStream;
 use protobuf::ProtobufError;
 
 use io2::Parse;
 
 use protocol_protobuf::request::Request;
-use protocol_protobuf::response::Response;
 
 impl Parse for Request {
     type Parser = ();
@@ -20,17 +18,16 @@ impl Parse for Request {
         buf: &Arc<Vec<u8>>,
         offset: usize)
     -> Option<Result<(Request, usize), io::Error>> {
-        match parse_from_bytes::<Request>(&buf[offset..]) {
-            Ok(m) => {
-                let size = m.compute_size() as usize;
-                Some(Ok((m, size)))
-            },
-            Err(e) => match e {
-                ProtobufError::IoError(e) => None,
+        let mut s = CodedInputStream::from_bytes(&buf[offset..]);
+        let message = match s.read_message() {
+            Ok(m) => m,
+            Err(e) => return match e {
+                ProtobufError::WireError(_) => None,
                 e => Some(Err(io::Error::new(io::ErrorKind::Other,
                                 format!("failed to parse request: {:?}", e)))),
             },
-        }
+        };
+        Some(Ok((message, s.pos() as usize)))
     }
 }
 
@@ -51,7 +48,7 @@ mod test {
         r.set_method(Request_Method::TAKE);
         r.set_count(123);
         r.set_all(true);
-        r.write_to_bytes().unwrap()
+        r.write_length_delimited_to_bytes().unwrap()
     }
 
     #[test]
@@ -68,6 +65,17 @@ mod test {
         let mut bytes = create_request("id");
         bytes.pop();
         assert!(Request::parse(&mut (), &Arc::new(bytes), 0).is_none());
+    }
+
+    #[test]
+    fn test_parse_two_messages() {
+        let mut bytes = create_request("id");
+        bytes.append(&mut create_request("other_id"));
+        let data = Arc::new(bytes);
+        let (req, read) = Request::parse(&mut (), &data, 0).unwrap().unwrap();
+        assert_eq!("id", req.get_id());
+        let req = Request::parse(&mut (), &data, read).unwrap().unwrap().0;
+        assert_eq!("other_id", req.get_id());
     }
 
     #[test]
