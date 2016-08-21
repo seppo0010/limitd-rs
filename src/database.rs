@@ -5,9 +5,24 @@ use leveldb;
 use leveldb::database::Database as LDatabase;
 use leveldb::options::{Options, WriteOptions};
 use leveldb::kv::KV;
-use db_key::Key;
+use db_key::Key as DBKey;
 
 use futures::{failed, finished, Future};
+
+// Not quite a fan of this implementation
+struct Key {
+    data: Vec<u8>,
+}
+
+impl DBKey for Key {
+    fn from_u8(key: &[u8]) -> Self {
+        Key { data: key.to_vec() }
+    }
+
+    fn as_slice<T, F: Fn(&[u8]) -> T>(&self, f: F) -> T {
+        f(&*self.data)
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -16,7 +31,7 @@ pub enum Error {
 }
 
 pub trait Database: Send + Sync + 'static {
-    fn put(&self, key: &str, value: &[u8]) -> Box<Future<Item=(), Error=Error>>;
+    fn put(&self, key: &[u8], value: &[u8]) -> Box<Future<Item=(), Error=Error>>;
 }
 
 pub struct LevelDB {
@@ -38,7 +53,7 @@ impl Database for LevelDB {
             Err(e) => { panic!("failed to open database: {:?}", e) }
         };
         let write_opts = WriteOptions::new();
-        match db.put(write_opts, key, value) {
+        match db.put(write_opts, Key::from_u8(key), value) {
             Ok(_) => { return finished(()).boxed() },
             Err(e) => { return failed(Error::LevelDBError(e)).boxed() }
         }
