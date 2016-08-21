@@ -4,6 +4,7 @@ use std::io;
 
 use futures::{Finished, finished};
 
+use database::Database;
 use server::Server;
 
 use self::pb::request::Request;
@@ -21,9 +22,9 @@ fn serve_protobuf(r: Request) -> Finished<Response, io::Error> {
 }
 
 impl Protocol {
-    pub fn serve(&self, server: &mut Server) -> io::Result<()> {
+    pub fn serve<D: Database>(&self, server: &mut Server, d: D) -> io::Result<()> {
         match *self {
-            Protocol::ProtocolBuffer => server.serve(serve_protobuf),
+            Protocol::ProtocolBuffer => server.serve(serve_protobuf, d),
             _ => unimplemented!(),
         }
     }

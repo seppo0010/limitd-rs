@@ -13,6 +13,7 @@ use futures_mio::{Loop, LoopHandle, TcpStream, TcpListener};
 
 pub use io2::{Parse, Serialize};
 use io2::{ParseStream, StreamWriter};
+use database::Database;
 
 pub trait Service<Req, Resp>: Send + Sync + 'static
     where Req: Send + 'static,
@@ -41,8 +42,9 @@ pub struct Server {
     workers: u32,
 }
 
-struct ServerData<S> {
+struct ServerData<S, Database> {
     service: S,
+    database: Database,
 }
 
 impl Server {
@@ -60,14 +62,16 @@ impl Server {
         self
     }
 
-    pub fn serve<Req, Resp, S>(&mut self, s: S) -> io::Result<()>
+    pub fn serve<Req, Resp, S, D>(&mut self, s: S, d: D) -> io::Result<()>
         where Req: Parse,
               Resp: Serialize,
+              D: Database,
               S: Service<Req, Resp>,
               <S::Fut as Future>::Error: From<Req::Error> + From<io::Error>, // TODO: simplify this?
     {
         let data = Arc::new(ServerData {
             service: s,
+            database: d,
         });
 
         let threads = (0..self.workers - 1).map(|i| {
@@ -141,9 +145,10 @@ impl<T: ?Sized> IoStream for T
     where T: Read + Write + 'static
 {}
 
-fn handle<Req, Resp, S>(stream: TcpStream, data: Arc<ServerData<S>>)
+fn handle<Req, Resp, S, D>(stream: TcpStream, data: Arc<ServerData<S, D>>)
     where Req: Parse,
           Resp: Serialize,
+          D: Database,
           S: Service<Req, Resp>,
           <S::Fut as Future>::Error: From<Req::Error> + From<io::Error>,
 {

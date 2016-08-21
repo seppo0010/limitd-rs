@@ -1,3 +1,4 @@
+extern crate db_key;
 extern crate env_logger;
 #[macro_use]
 extern crate futures;
@@ -5,29 +6,25 @@ extern crate futures;
 extern crate futures_io;
 extern crate futures_mio;
 extern crate getopts;
+extern crate leveldb;
 #[macro_use]
 extern crate log;
 extern crate net2;
 extern crate protobuf;
 extern crate time;
 
+mod database;
 mod protocol;
 mod io2;
 mod server;
 
 use std::env;
-use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 
 use getopts::Options;
 
 use protocol::Protocol;
 use server::Server;
-
-struct Settings {
-    addr: SocketAddr,
-    protocol: Protocol,
-}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -52,12 +49,10 @@ fn main() {
 
     let port: u16 = matches.opt_str("p").and_then(|x| x.parse().ok()).unwrap_or(9231);
     let addr = (&*matches.opt_str("h").unwrap_or("0.0.0.0".to_owned()), port).to_socket_addrs().unwrap().next().unwrap();
-    let settings = Settings {
-        addr: addr,
-        protocol: if matches.opt_present("avro") { Protocol::Avro } else { Protocol::ProtocolBuffer },
-    };
+    let protocol = if matches.opt_present("avro") { Protocol::Avro } else { Protocol::ProtocolBuffer };
+    let db = database::LevelDB::new(matches.opt_str("d").unwrap()).unwrap();
 
-    let mut server = Server::new(&settings.addr);
+    let mut server = Server::new(&addr);
     server.workers(1);
-    settings.protocol.serve(&mut server).unwrap();
+    protocol.serve(&mut server, db).unwrap();
 }
