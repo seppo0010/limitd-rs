@@ -4,14 +4,40 @@ pub mod response;
 use std::io;
 use std::sync::Arc;
 
+use futures::{Finished, finished};
 use protobuf::CodedInputStream;
 use protobuf::Message;
 use protobuf::ProtobufError;
 
 use io2::{Parse, Serialize};
 
-use protocol::pb::request::Request;
-use protocol::pb::response::Response;
+use database::Database;
+use handle::{Req, Res, handle, Method};
+use protocol::pb::request::{Request, Request_Method};
+use protocol::pb::response::{PongResponse, Response};
+
+impl Req for Request {
+    fn method(&self) -> Method {
+        match self.get_method() {
+            Request_Method::PING => Method::Ping,
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl Res for Response {
+    fn set_pong_response(&mut self) {
+        self.set_pongResponse(PongResponse::new())
+    }
+}
+
+pub fn serve_protobuf<D: Database>(r: Request, d: Arc<Database>) -> Finished<Response, io::Error> {
+    let mut response = Response::new();
+    response.set_request_id(r.get_id().to_owned());
+    handle(&r, &mut response, d);
+    finished(response)
+}
+
 
 impl Parse for Request {
     type Parser = ();

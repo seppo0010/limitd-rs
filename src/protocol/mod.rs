@@ -1,30 +1,22 @@
 mod pb;
 
 use std::io;
-
-use futures::{Finished, finished};
+use std::sync::Arc;
 
 use database::Database;
 use server::Server;
 
-use self::pb::request::Request;
-use self::pb::response::Response;
+use self::pb::serve_protobuf;
 
 pub enum Protocol {
     ProtocolBuffer,
     Avro,
 }
 
-fn serve_protobuf(r: Request) -> Finished<Response, io::Error> {
-    let mut response = Response::new();
-    response.set_request_id(r.get_id().to_owned());
-    finished(response)
-}
-
 impl Protocol {
-    pub fn serve<D: Database>(&self, server: &mut Server, d: D) -> io::Result<()> {
+    pub fn serve<D: Database>(&self, server: &mut Server, d: Arc<D>) -> io::Result<()> {
         match *self {
-            Protocol::ProtocolBuffer => server.serve(serve_protobuf, d),
+            Protocol::ProtocolBuffer => server.serve(move |r| serve_protobuf::<D>(r, d.clone())),
             _ => unimplemented!(),
         }
     }

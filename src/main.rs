@@ -14,12 +14,14 @@ extern crate protobuf;
 extern crate time;
 
 mod database;
-mod protocol;
+mod handle;
 mod io2;
+mod protocol;
 mod server;
 
 use std::env;
 use std::net::ToSocketAddrs;
+use std::sync::Arc;
 
 use getopts::Options;
 
@@ -50,7 +52,7 @@ fn main() {
     let port: u16 = matches.opt_str("p").and_then(|x| x.parse().ok()).unwrap_or(9231);
     let addr = (&*matches.opt_str("h").unwrap_or("0.0.0.0".to_owned()), port).to_socket_addrs().unwrap().next().unwrap();
     let protocol = if matches.opt_present("avro") { Protocol::Avro } else { Protocol::ProtocolBuffer };
-    let db = database::LevelDB::new(matches.opt_str("d").unwrap()).unwrap();
+    let db = Arc::new(database::LevelDB::new(matches.opt_str("d").unwrap()).unwrap());
 
     let mut server = Server::new(&addr);
     server.workers(1);

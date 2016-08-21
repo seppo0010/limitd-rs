@@ -1,4 +1,3 @@
-use std::io;
 use std::path::Path;
 
 use leveldb;
@@ -26,7 +25,6 @@ impl DBKey for Key {
 
 #[derive(Debug)]
 pub enum Error {
-    IOError(io::Error),
     LevelDBError(leveldb::error::Error),
 }
 
