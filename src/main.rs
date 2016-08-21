@@ -23,7 +23,6 @@ use std::net::ToSocketAddrs;
 use futures::{Finished, finished};
 use getopts::Options;
 
-pub use io2::{Parse, Serialize};
 use protocol_protobuf::request::Request;
 use protocol_protobuf::response::Response;
 use server::Server;
@@ -33,8 +32,10 @@ enum Protocol {
     Avro,
 }
 
-fn serve_protobuf(_r: Request) -> Finished<Response, io::Error> {
-    finished(Response::new())
+fn serve_protobuf(r: Request) -> Finished<Response, io::Error> {
+    let mut response = Response::new();
+    response.set_request_id(r.get_id().to_owned());
+    finished(response)
 }
 
 impl Protocol {

@@ -242,6 +242,8 @@ impl<W, S> Future for StreamWriter<W, S>
                     Poll::Ok(Some(item)) => {
                         debug!("got an item to serialize!");
                         item.serialize(&mut self.buf);
+                        // this was not on futures-rs, but it seems useful *shrug*
+                        break;
                     }
                     Poll::Ok(None) |
                     Poll::NotReady => break,
