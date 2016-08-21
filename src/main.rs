@@ -16,34 +16,39 @@ mod io2;
 mod server;
 
 use std::env;
+use std::io;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 
-use futures::Future;
-use futures::stream::Stream;
-use futures_io::{copy, TaskIo};
+use futures::{Finished, finished};
 use getopts::Options;
-use log::LogLevel;
+
+pub use io2::{Parse, Serialize};
+use protocol_protobuf::request::Request;
+use protocol_protobuf::response::Response;
+use server::Server;
 
 enum Protocol {
     ProtocolBuffer,
     Avro,
 }
 
+fn serve_protobuf(_r: Request) -> Finished<Response, io::Error> {
+    finished(Response::new())
+}
+
+impl Protocol {
+    pub fn serve(&self, server: &mut Server) -> io::Result<()> {
+        match *self {
+            Protocol::ProtocolBuffer => server.serve(serve_protobuf),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 struct Settings {
     addr: SocketAddr,
     protocol: Protocol,
-    db: String,
-    config: Option<String>,
-    profile: bool,
-}
-
-struct Bucket {
-    name: String,
-    perSecond: u64,
-    purpose: Option<String>,
-    size: u64,
-    until: Option<time::Tm>,
 }
 
 fn main() {
@@ -70,10 +75,11 @@ fn main() {
     let port: u16 = matches.opt_str("p").and_then(|x| x.parse().ok()).unwrap_or(9231);
     let addr = (&*matches.opt_str("h").unwrap_or("0.0.0.0".to_owned()), port).to_socket_addrs().unwrap().next().unwrap();
     let settings = Settings {
-        addr: addr.clone(),
+        addr: addr,
         protocol: if matches.opt_present("avro") { Protocol::Avro } else { Protocol::ProtocolBuffer },
-        db: matches.opt_str("d").unwrap(),
-        config: matches.opt_str("c"),
-        profile: matches.opt_present("profile"),
     };
+
+    let mut server = Server::new(&settings.addr);
+    server.workers(1);
+    settings.protocol.serve(&mut server).unwrap();
 }

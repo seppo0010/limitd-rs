@@ -5,11 +5,13 @@ use std::io;
 use std::sync::Arc;
 
 use protobuf::CodedInputStream;
+use protobuf::Message;
 use protobuf::ProtobufError;
 
-use io2::Parse;
+use io2::{Parse, Serialize};
 
 use protocol_protobuf::request::Request;
+use protocol_protobuf::response::Response;
 
 impl Parse for Request {
     type Parser = ();
@@ -28,6 +30,12 @@ impl Parse for Request {
             },
         };
         Some(Ok((message, s.pos() as usize)))
+    }
+}
+
+impl Serialize for Response {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        self.write_length_delimited_to_writer(buf).unwrap();
     }
 }
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::thread;
 
 use net2;
-use futures::{self, Future, Poll};
+use futures::{self, Future};
 use futures::stream::Stream;
 use futures_io::{IoFuture, TaskIo};
 use futures_mio::{Loop, LoopHandle, TcpStream, TcpListener};
