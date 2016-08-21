@@ -12,7 +12,7 @@ use protobuf::ProtobufError;
 use io2::{Parse, Serialize};
 
 use database::Database;
-use handle::{Req, Res, handle, Method};
+use handle::{Req, Res, handle, Method, HandlerData};
 use protocol::pb::request::{Request, Request_Method};
 use protocol::pb::response::{PongResponse, Response};
 
@@ -31,7 +31,7 @@ impl Res for Response {
     }
 }
 
-pub fn serve_protobuf<D: Database>(r: Request, d: Arc<Database>) -> Finished<Response, io::Error> {
+pub fn serve_protobuf<D: Database>(r: Request, d: Arc<HandlerData<D>>) -> Finished<Response, io::Error> {
     let mut response = Response::new();
     response.set_request_id(r.get_id().to_owned());
     handle(&r, &mut response, d);

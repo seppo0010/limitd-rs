@@ -52,9 +52,9 @@ fn main() {
     let port: u16 = matches.opt_str("p").and_then(|x| x.parse().ok()).unwrap_or(9231);
     let addr = (&*matches.opt_str("h").unwrap_or("0.0.0.0".to_owned()), port).to_socket_addrs().unwrap().next().unwrap();
     let protocol = if matches.opt_present("avro") { Protocol::Avro } else { Protocol::ProtocolBuffer };
-    let db = Arc::new(database::LevelDB::new(matches.opt_str("d").unwrap()).unwrap());
+    let db = database::LevelDB::<database::Key>::new(&*matches.opt_str("d").unwrap()).unwrap();
 
     let mut server = Server::new(&addr);
     server.workers(1);
-    protocol.serve(&mut server, db).unwrap();
+    protocol.serve(&mut server, Arc::new(handle::HandlerData::new(db))).unwrap();
 }
