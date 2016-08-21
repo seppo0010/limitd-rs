@@ -11,9 +11,6 @@ use futures::stream::Stream;
 use futures_io::{IoFuture, TaskIo};
 use futures_mio::{Loop, LoopHandle, TcpStream, TcpListener};
 
-// pub use protocol_protobuf::request::Request;
-// pub use self::response::Response;
-
 pub use io2::{Parse, Serialize};
 use io2::{ParseStream, StreamWriter};
 
