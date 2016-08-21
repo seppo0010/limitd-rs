@@ -12,7 +12,9 @@ extern crate log;
 extern crate net2;
 extern crate protobuf;
 extern crate time;
+extern crate yaml_rust;
 
+mod bucket;
 mod database;
 mod handle;
 mod io2;
