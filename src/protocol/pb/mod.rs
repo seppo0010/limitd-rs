@@ -10,8 +10,8 @@ use protobuf::ProtobufError;
 
 use io2::{Parse, Serialize};
 
-use protocol_protobuf::request::Request;
-use protocol_protobuf::response::Response;
+use protocol::pb::request::Request;
+use protocol::pb::response::Response;
 
 impl Parse for Request {
     type Parser = ();
@@ -45,7 +45,7 @@ mod test {
 
     use protobuf::Message;
 
-    use protocol_protobuf::request::{Request, Request_Method};
+    use protocol::pb::request::{Request, Request_Method};
     use io2::Parse;
 
     fn create_request(id: &str) -> Vec<u8> {

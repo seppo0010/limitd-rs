@@ -11,41 +11,18 @@ extern crate net2;
 extern crate protobuf;
 extern crate time;
 
-mod protocol_protobuf;
+mod protocol;
 mod io2;
 mod server;
 
 use std::env;
-use std::io;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 
-use futures::{Finished, finished};
 use getopts::Options;
 
-use protocol_protobuf::request::Request;
-use protocol_protobuf::response::Response;
+use protocol::Protocol;
 use server::Server;
-
-enum Protocol {
-    ProtocolBuffer,
-    Avro,
-}
-
-fn serve_protobuf(r: Request) -> Finished<Response, io::Error> {
-    let mut response = Response::new();
-    response.set_request_id(r.get_id().to_owned());
-    finished(response)
-}
-
-impl Protocol {
-    pub fn serve(&self, server: &mut Server) -> io::Result<()> {
-        match *self {
-            Protocol::ProtocolBuffer => server.serve(serve_protobuf),
-            _ => unimplemented!(),
-        }
-    }
-}
 
 struct Settings {
     addr: SocketAddr,
