@@ -22,6 +22,8 @@ mod protocol;
 mod server;
 
 use std::env;
+use std::io::Read;
+use std::fs::File;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
@@ -55,8 +57,18 @@ fn main() {
     let addr = (&*matches.opt_str("h").unwrap_or("0.0.0.0".to_owned()), port).to_socket_addrs().unwrap().next().unwrap();
     let protocol = if matches.opt_present("avro") { Protocol::Avro } else { Protocol::ProtocolBuffer };
     let db = database::LevelDB::<database::Key>::new(&*matches.opt_str("d").unwrap()).unwrap();
+    let config = matches.opt_str("c").and_then(|c| {
+        let mut f = match File::open(c) {
+            Ok(f) => f,
+            Err(_) => return None
+        };
+        let mut s = String::new();
+        f.read_to_string(&mut s).ok().map(|_| s)
+    }).unwrap_or("".to_owned());
+    let buckets = bucket::Buckets::new(&*config).unwrap();
+    let handler_data = handle::HandlerData::new(db, buckets);
 
     let mut server = Server::new(&addr);
     server.workers(1);
-    protocol.serve(&mut server, Arc::new(handle::HandlerData::new(db))).unwrap();
+    protocol.serve(&mut server, Arc::new(handler_data)).unwrap();
 }

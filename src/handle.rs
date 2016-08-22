@@ -1,13 +1,16 @@
+use bucket::Buckets;
 use database::Database;
 
 pub struct HandlerData<D: Database> {
     db: D,
+    buckets: Buckets,
 }
 
 impl <D: Database> HandlerData<D> {
-    pub fn new(db: D) -> Self {
+    pub fn new(db: D, buckets: Buckets) -> Self {
         HandlerData {
             db: db,
+            buckets: buckets,
         }
     }
 }
@@ -48,6 +51,7 @@ mod test {
 
     use futures::{IntoFuture, Done};
 
+    use bucket::Buckets;
     use database::{Database, Error};
 
     use super::{Method, Req, Res, HandlerData, handle};
@@ -100,7 +104,7 @@ mod test {
         let request = Request::new(Method::Ping);
         let mut response = Response::default();
         let database = MockDatabase::default();
-        let data = HandlerData::new(database);
+        let data = HandlerData::new(database, Buckets::default());
         assert!(!response.pong_response);
         handle(&request, &mut response, Arc::new(data));
         assert!(response.pong_response);
