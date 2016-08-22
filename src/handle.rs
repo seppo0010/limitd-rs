@@ -99,7 +99,7 @@ mod test {
         }
 
         fn list(&self, key: &[u8]) -> Done<Vec<Vec<u8>>, Error> {
-            Ok(Vec::new()).into_future()
+            Ok(self.data.lock().unwrap().iter().filter(|k| { &k.0[..key.len()] == key }).map(|k| k.1.clone()).collect()).into_future()
         }
     }
 
