@@ -97,6 +97,10 @@ mod test {
         fn get(&self, key: &[u8]) -> Done<Option<Vec<u8>>, Error> {
             Ok(self.data.lock().unwrap().get(key).cloned()).into_future()
         }
+
+        fn list(&self, key: &[u8]) -> Done<Vec<Vec<u8>>, Error> {
+            Ok(Vec::new()).into_future()
+        }
     }
 
     #[test]
