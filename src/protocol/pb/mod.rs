@@ -4,7 +4,7 @@ pub mod response;
 use std::io;
 use std::sync::Arc;
 
-use futures::{Finished, finished, Future, BoxFuture};
+use futures::{Future, BoxFuture};
 use protobuf::CodedInputStream;
 use protobuf::Message;
 use protobuf::ProtobufError;
