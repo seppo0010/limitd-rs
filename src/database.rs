@@ -1,3 +1,4 @@
+use std::io;
 use std::path::Path;
 
 use leveldb;
@@ -28,6 +29,7 @@ impl DBKey for Key {
 #[derive(Debug)]
 pub enum Error {
     LevelDBError(leveldb::error::Error),
+    IOError(io::Error),
 }
 
 impl Error {
@@ -49,6 +51,12 @@ impl Eq for Error {}
 impl From<leveldb::error::Error> for Error {
     fn from(e: leveldb::error::Error) -> Self {
         Error::LevelDBError(e)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IOError(e)
     }
 }
 

@@ -1,5 +1,7 @@
+use futures::{BoxFuture, IntoFuture, Future};
+
 use bucket::Buckets;
-use database::Database;
+use database::{Database, Error};
 
 pub struct HandlerData<D: Database> {
     db: D,
@@ -21,11 +23,12 @@ pub enum Method {
 }
 
 impl Method {
-    fn handle_ping<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(&self, _req: &ReqT, res: &mut ResT, _data: Data) {
+    fn handle_ping<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(&self, _req: &ReqT, res: &mut ResT, _data: Data) -> BoxFuture<(), Error> {
         res.set_pong_response();
+        Ok(()).into_future().boxed()
     }
 
-    fn handle<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(&self, req: &ReqT, res: &mut ResT, data: Data) {
+    fn handle<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(&self, req: &ReqT, res: &mut ResT, data: Data) -> BoxFuture<(), Error> {
         match *self {
             Method::Ping => self.handle_ping(req, res, data),
         }
@@ -40,7 +43,7 @@ pub trait Res: Default {
     fn set_pong_response(&mut self);
 }
 
-pub fn handle<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(req: &ReqT, res: &mut ResT, d: Data) {
+pub fn handle<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(req: &ReqT, res: &mut ResT, d: Data) -> BoxFuture<(), Error> {
     req.method().handle(req, res, d)
 }
 

@@ -4,14 +4,14 @@ pub mod response;
 use std::io;
 use std::sync::Arc;
 
-use futures::{Finished, finished};
+use futures::{Finished, finished, Future, BoxFuture};
 use protobuf::CodedInputStream;
 use protobuf::Message;
 use protobuf::ProtobufError;
 
 use io2::{Parse, Serialize};
 
-use database::Database;
+use database::{Database, Error};
 use handle::{Req, Res, handle, Method, HandlerData};
 use protocol::pb::request::{Request, Request_Method};
 use protocol::pb::response::{PongResponse, Response};
@@ -31,28 +31,26 @@ impl Res for Response {
     }
 }
 
-pub fn serve_protobuf<D: Database>(r: Request, d: Arc<HandlerData<D>>) -> Finished<Response, io::Error> {
+pub fn serve_protobuf<D: Database>(r: Request, d: Arc<HandlerData<D>>) -> BoxFuture<Response, Error> {
     let mut response = Response::new();
     response.set_request_id(r.get_id().to_owned());
-    handle(&r, &mut response, d);
-    finished(response)
+    handle(&r, &mut response, d).map(move |_| response).boxed()
 }
-
 
 impl Parse for Request {
     type Parser = ();
-    type Error = io::Error;
+    type Error = Error;
     fn parse(_: &mut (),
         buf: &Arc<Vec<u8>>,
         offset: usize)
-    -> Option<Result<(Request, usize), io::Error>> {
+    -> Option<Result<(Request, usize), Error>> {
         let mut s = CodedInputStream::from_bytes(&buf[offset..]);
         let message = match s.read_message() {
             Ok(m) => m,
             Err(e) => return match e {
                 ProtobufError::WireError(_) => None,
-                e => Some(Err(io::Error::new(io::ErrorKind::Other,
-                                format!("failed to parse request: {:?}", e)))),
+                e => Some(Err(Error::IOError(io::Error::new(io::ErrorKind::Other,
+                                format!("failed to parse request: {:?}", e))))),
             },
         };
         Some(Ok((message, s.pos() as usize)))
