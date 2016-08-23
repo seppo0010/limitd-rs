@@ -36,6 +36,7 @@ impl Error {
     fn is_level_db_error(&self) -> bool {
         match *self {
             Error::LevelDBError(_) => true,
+            _ => false,
         }
     }
 }
