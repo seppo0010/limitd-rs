@@ -20,17 +20,26 @@ impl <D: Database> HandlerData<D> {
 #[derive(Clone)]
 pub enum Method {
     Ping,
+    Status,
 }
 
 impl Method {
-    fn handle_ping<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(&self, _req: &ReqT, res: &mut ResT, _data: Data) -> BoxFuture<(), Error> {
-        res.set_pong_response();
-        Ok(()).into_future().boxed()
+    fn handle_status<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(&self, _req: &ReqT, mut res: ResT, data: Data) -> BoxFuture<ResT, Error> {
+        data.as_ref().db.list(&[]).map(move |_| {
+            res.set_pong_response();
+            res
+        }).boxed()
     }
 
-    fn handle<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(&self, req: &ReqT, res: &mut ResT, data: Data) -> BoxFuture<(), Error> {
+    fn handle_ping<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(&self, _req: &ReqT, mut res: ResT, _data: Data) -> BoxFuture<ResT, Error> {
+        res.set_pong_response();
+        Ok(res).into_future().boxed()
+    }
+
+    fn handle<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(&self, req: &ReqT, res: ResT, data: Data) -> BoxFuture<ResT, Error> {
         match *self {
             Method::Ping => self.handle_ping(req, res, data),
+            Method::Status => self.handle_status(req, res, data),
         }
     }
 }
@@ -39,20 +48,21 @@ pub trait Req {
     fn method(&self) -> Method;
 }
 
-pub trait Res: Default {
+pub trait Res: Default + Send {
     fn set_pong_response(&mut self);
 }
 
-pub fn handle<ReqT: Req, ResT: Res, D: Database, Data: AsRef<HandlerData<D>>>(req: &ReqT, res: &mut ResT, d: Data) -> BoxFuture<(), Error> {
+pub fn handle<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(req: &ReqT, res: ResT, d: Data) -> BoxFuture<ResT, Error> {
     req.method().handle(req, res, d)
 }
 
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
+    use std::fmt;
     use std::sync::{Arc, Mutex};
 
-    use futures::{IntoFuture, Done};
+    use futures::{Future, Task, IntoFuture, Done};
 
     use bucket::Buckets;
     use database::{Database, Error};
@@ -106,14 +116,29 @@ mod test {
         }
     }
 
+    // copying and pasting this? not great
+    pub fn assert_done<T, F>(mut f: F, result: Result<T::Item, T::Error>)
+        where T: Future,
+        T::Item: Eq + fmt::Debug,
+        T::Error: Eq + fmt::Debug,
+        F: FnMut() -> T,
+    {
+        let mut a = f();
+        assert_eq!(&a.poll(&mut Task::new()).unwrap(), &result);
+        drop(a);
+    }
+
     #[test]
     fn test_ping() {
-        let request = Request::new(Method::Ping);
-        let mut response = Response::default();
-        let database = MockDatabase::default();
-        let data = HandlerData::new(database, Buckets::default());
-        assert!(!response.pong_response);
-        handle(&request, &mut response, Arc::new(data));
-        assert!(response.pong_response);
+        assert_done(move || {
+            let request = Request::new(Method::Ping);
+            let database = MockDatabase::default();
+            let data = HandlerData::new(database, Buckets::default());
+            let response = Response::default();
+            assert!(!response.pong_response);
+            handle(&request, response, Arc::new(data)).map(|r| {
+                r.pong_response
+            })
+        }, Ok(true));
     }
 }

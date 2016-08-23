@@ -20,6 +20,7 @@ impl Req for Request {
     fn method(&self) -> Method {
         match self.get_method() {
             Request_Method::PING => Method::Ping,
+            Request_Method::STATUS => Method::Status,
             _ => unimplemented!(),
         }
     }
@@ -34,7 +35,7 @@ impl Res for Response {
 pub fn serve_protobuf<D: Database>(r: Request, d: Arc<HandlerData<D>>) -> BoxFuture<Response, Error> {
     let mut response = Response::new();
     response.set_request_id(r.get_id().to_owned());
-    handle(&r, &mut response, d).map(move |_| response).boxed()
+    handle(&r, response, d).boxed()
 }
 
 impl Parse for Request {
