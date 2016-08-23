@@ -14,7 +14,7 @@ use io2::{Parse, Serialize};
 use database::{Database, Error};
 use handle::{Req, Res, handle, Method, HandlerData};
 use protocol::pb::request::{Request, Request_Method};
-use protocol::pb::response::{PongResponse, Response};
+use protocol::pb::response::{StatusResponse, StatusResponseItem, PongResponse, Response};
 
 impl Req for Request {
     fn method(&self) -> Method {
@@ -29,6 +29,19 @@ impl Req for Request {
 impl Res for Response {
     fn set_pong_response(&mut self) {
         self.set_pongResponse(PongResponse::new())
+    }
+
+    fn set_status_response<I: Iterator<Item=(String, i32, i32, i32)>>(&mut self, items: I) {
+        let mut status_response = StatusResponse::new();
+        status_response.set_items(items.map(|(instance, remaining, reset, limit)| {
+            let mut i = StatusResponseItem::new();
+            i.set_instance(instance);
+            i.set_remaining(remaining);
+            i.set_reset(reset);
+            i.set_limit(limit);
+            i
+        }).collect());
+        self.set_statusResponse(status_response)
     }
 }
 

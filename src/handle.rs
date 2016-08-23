@@ -50,6 +50,7 @@ pub trait Req {
 
 pub trait Res: Default + Send {
     fn set_pong_response(&mut self);
+    fn set_status_response<I: Iterator<Item=(String, i32, i32, i32)>>(&mut self, items: I);
 }
 
 pub fn handle<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(req: &ReqT, res: ResT, d: Data) -> BoxFuture<ResT, Error> {
@@ -88,11 +89,16 @@ mod test {
     #[derive(Default)]
     struct Response {
         pong_response: bool,
+        status_response: Option<Vec<(String, i32, i32, i32)>>,
     }
 
     impl Res for Response {
         fn set_pong_response(&mut self) {
             self.pong_response = true;
+        }
+
+        fn set_status_response<I: Iterator<Item=(String, i32, i32, i32)>>(&mut self, items: I) {
+            self.status_response = Some(items.collect());
         }
     }
 
