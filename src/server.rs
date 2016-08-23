@@ -13,7 +13,6 @@ use futures_mio::{Loop, LoopHandle, TcpStream, TcpListener};
 
 pub use io2::{Parse, Serialize};
 use io2::{ParseStream, StreamWriter};
-use database::Error;
 
 pub trait Service<Req, Resp>: Send + Sync + 'static
     where Req: Send + 'static,
@@ -65,7 +64,7 @@ impl Server {
         where Req: Parse,
               Resp: Serialize,
               S: Service<Req, Resp>,
-              <S::Fut as Future>::Error: From<Req::Error> + From<io::Error> + From<Error>, // TODO: simplify this?
+              <S::Fut as Future>::Error: From<Req::Error> + From<io::Error>, // TODO: simplify this?
     {
         let data = Arc::new(ServerData {
             service: s,
@@ -146,7 +145,7 @@ fn handle<Req, Resp, S>(stream: TcpStream, data: Arc<ServerData<S>>)
     where Req: Parse,
           Resp: Serialize,
           S: Service<Req, Resp>,
-          <S::Fut as Future>::Error: From<Req::Error> + From<io::Error> + From<Error>,
+          <S::Fut as Future>::Error: From<Req::Error> + From<io::Error>,
 {
     let io = TaskIo::new(stream).map_err(From::from).and_then(|io| {
         let (reader, writer) = io.split();

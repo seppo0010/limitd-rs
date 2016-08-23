@@ -7,11 +7,9 @@ use futures::{Future, Task, Poll};
 use futures::stream::{Stream, Fuse};
 use futures_io::{Ready, ReadTask, WriteTask};
 
-use database; // FIXME: not a great import here
-
 pub trait Parse: Sized + Send + 'static {
     type Parser: Default + Send + 'static;
-    type Error: Send + 'static + From<database::Error>;
+    type Error: Send + 'static + From<io::Error>;
 
     fn parse(parser: &mut Self::Parser,
              buf: &Arc<Vec<u8>>,
@@ -91,8 +89,7 @@ fn read(socket: &mut ReadTask<Item=Ready, Error=io::Error>,
 
 impl<R, P> Stream for ParseStream<R, P>
     where R: ReadTask,
-          P: Parse,
-          P::Error: From<io::Error>
+          P: Parse
 {
     type Item = P;
     type Error = P::Error;
