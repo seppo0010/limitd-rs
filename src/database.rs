@@ -64,7 +64,7 @@ impl From<io::Error> for Error {
 pub trait Database: Send + Sync + 'static {
     fn put(&self, key: &[u8], value: &[u8]) -> Done<(), Error>;
     fn get(&self, key: &[u8]) -> Done<Option<Vec<u8>>, Error>;
-    fn list(&self, key: &[u8]) -> Done<Vec<Vec<u8>>, Error>;
+    fn list(&self, key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error>;
 }
 
 pub struct LevelDB<K: DBKey> {
@@ -91,10 +91,12 @@ impl<K: DBKey + 'static> Database for LevelDB<K> {
         self.db.get(read_opts, K::from_u8(key)).map_err(|e| Error::LevelDBError(e)).into_future()
     }
 
-    fn list(&self, key: &[u8]) -> Done<Vec<Vec<u8>>, Error> {
+    fn list(&self, key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error> {
         let read_opts = ReadOptions::new();
         // this is awful, but rust's leveldb lib does not seem to provide filtering for us
-        Ok(self.db.snapshot().iter(read_opts).filter(|k| { K::as_slice(&k.0, |x| &x[..key.len()] == key )}).map(|k| k.1).collect()).into_future()
+        Ok(self.db.snapshot().iter(read_opts).filter(|k| {
+            K::as_slice(&k.0, |x| &x[..key.len()] == key)
+        }).map(|k| (K::as_slice(&k.0, |x| x.to_vec()), k.1)).collect()).into_future()
     }
 }
 
@@ -171,6 +173,6 @@ mod test{
                     db.list(&key)
                 })
             })
-        }, Ok(vec![value.to_vec(), value2.to_vec()]));
+        }, Ok(vec![(key.to_vec(), value.to_vec()), (key2.to_vec(), value2.to_vec())]));
     }
 }

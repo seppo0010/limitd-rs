@@ -24,9 +24,11 @@ pub enum Method {
 }
 
 impl Method {
-    fn handle_status<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(&self, _req: &ReqT, mut res: ResT, data: Data) -> BoxFuture<ResT, Error> {
-        data.as_ref().db.list(&[]).map(move |_| {
-            res.set_pong_response();
+    fn handle_status<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(&self, req: &ReqT, mut res: ResT, data: Data) -> BoxFuture<ResT, Error> {
+        data.as_ref().db.list(req.key().as_bytes()).map(move |els| {
+            res.set_status_response(els.into_iter().map(|el| {
+                (String::from_utf8(el.0).unwrap(), 0, 0, 0)
+            }));
             res
         }).boxed()
     }
@@ -46,6 +48,8 @@ impl Method {
 
 pub trait Req {
     fn method(&self) -> Method;
+    fn bucket(&self) -> String;
+    fn key(&self) -> String;
 }
 
 pub trait Res: Default + Send {
@@ -65,25 +69,31 @@ mod test {
 
     use futures::{Future, Task, IntoFuture, Done};
 
-    use bucket::Buckets;
+    use bucket::{Bucket, Buckets};
     use database::{Database, Error};
 
     use super::{Method, Req, Res, HandlerData, handle};
 
     struct Request {
         method: Method,
+        bucket: Option<String>,
+        key: Option<String>,
     }
 
     impl Request {
-        fn new(method: Method) -> Self {
+        fn new(method: Method, bucket: Option<String>, key: Option<String>) -> Self {
             Request {
                 method: method,
+                bucket: bucket,
+                key: key,
             }
         }
     }
 
     impl Req for Request {
         fn method(&self) -> Method { self.method.clone() }
+        fn bucket(&self) -> String { self.bucket.clone().unwrap() }
+        fn key(&self) -> String { self.key.clone().unwrap() }
     }
 
     #[derive(Default)]
@@ -117,8 +127,10 @@ mod test {
             Ok(self.data.lock().unwrap().get(key).cloned()).into_future()
         }
 
-        fn list(&self, key: &[u8]) -> Done<Vec<Vec<u8>>, Error> {
-            Ok(self.data.lock().unwrap().iter().filter(|k| { &k.0[..key.len()] == key }).map(|k| k.1.clone()).collect()).into_future()
+        fn list(&self, key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error> {
+            Ok(self.data.lock().unwrap().iter().filter(|k| {
+                &k.0[..key.len()] == key
+            }).map(|k| (k.0.to_vec(), k.1.clone())).collect()).into_future()
         }
     }
 
@@ -137,7 +149,7 @@ mod test {
     #[test]
     fn test_ping() {
         assert_done(move || {
-            let request = Request::new(Method::Ping);
+            let request = Request::new(Method::Ping, None, None);
             let database = MockDatabase::default();
             let data = HandlerData::new(database, Buckets::default());
             let response = Response::default();
@@ -146,5 +158,28 @@ mod test {
                 r.pong_response
             })
         }, Ok(true));
+    }
+
+    #[test]
+    fn test_status() {
+        let k = "key123";
+        assert_done(move || {
+            let request = Request::new(Method::Status, Some("bucket".to_owned()), Some("key".to_owned()));
+
+            let database = MockDatabase::default();
+            database.put(k.as_bytes(), "hello".as_bytes());
+
+            let mut buckets = Buckets::default();
+            let bucket = Bucket::new("bucket".to_owned(), 1, 1, 1);
+            buckets.add(bucket);
+
+            let data = HandlerData::new(database, buckets);
+
+            let response = Response::default();
+            assert!(!response.pong_response);
+            handle(&request, response, Arc::new(data)).map(|r| {
+                r.status_response
+            })
+        }, Ok(Some(vec![(k.to_owned(), 0, 0, 0)])));
     }
 }

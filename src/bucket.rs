@@ -24,6 +24,19 @@ pub struct Bucket {
     until: Option<time::Tm>,
 }
 
+impl Bucket {
+    pub fn new(name: String, interval: u64, per_interval: u64, size: u64) -> Bucket {
+        Bucket {
+            name: name,
+            interval: interval,
+            per_interval: per_interval,
+            purpose: None,
+            size: size,
+            until: None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Buckets {
     buckets: HashMap<String, Bucket>,
@@ -39,6 +52,11 @@ macro_rules! parse_interval {
 }
 
 impl Buckets {
+    pub fn add(&mut self, bucket: Bucket) {
+        let name = bucket.name.clone();
+        self.buckets.insert(name, bucket);
+    }
+
     fn parse_size(&mut self, h: &BTreeMap<yaml_rust::Yaml, yaml_rust::Yaml>) -> Result<u64, BucketError> {
         match h.get(&yaml_rust::Yaml::from_str("size")) {
             Some(s) => s.as_i64().ok_or(BucketError::WrongType).map(|x| x as u64),

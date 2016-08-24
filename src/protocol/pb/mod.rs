@@ -24,6 +24,14 @@ impl Req for Request {
             _ => unimplemented!(),
         }
     }
+
+    fn bucket(&self) -> String {
+        self.get_field_type().to_owned()
+    }
+
+    fn key(&self) -> String {
+        self.get_key().to_owned()
+    }
 }
 
 impl Res for Response {
