@@ -6,6 +6,7 @@ extern crate futures;
 extern crate futures_io;
 extern crate futures_mio;
 extern crate getopts;
+extern crate json;
 extern crate leveldb;
 #[macro_use]
 extern crate log;

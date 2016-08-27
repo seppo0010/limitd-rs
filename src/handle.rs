@@ -1,4 +1,6 @@
-use futures::{BoxFuture, IntoFuture, Future};
+use std::sync::Arc;
+
+use futures::{BoxFuture, IntoFuture, Future, failed};
 
 use bucket::Buckets;
 use database::{Database, Error};
@@ -24,21 +26,25 @@ pub enum Method {
 }
 
 impl Method {
-    fn handle_status<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(&self, req: &ReqT, mut res: ResT, data: Data) -> BoxFuture<ResT, Error> {
-        data.as_ref().db.list(req.key().as_bytes()).map(move |els| {
-            res.set_status_response(els.into_iter().map(|el| {
-                (String::from_utf8(el.0).unwrap(), 0, 0, 0)
-            }));
-            res
-        }).boxed()
+    fn handle_status<ReqT: Req, ResT: Res + 'static, D: Database>(&self, req: &ReqT, mut res: ResT, data: Arc<HandlerData<D>>) -> BoxFuture<ResT, Error> {
+        let d = data.clone();
+        let key = req.key();
+        let bucket = data.buckets.get(&*req.bucket());
+        match bucket {
+            Some(b) => b.status(&*key, &d.db).map(|i| {
+                res.set_status_response(i.into_iter());
+                res
+            }).boxed(),
+            None => failed(Error::InvalidBucket).boxed()
+        }
     }
 
-    fn handle_ping<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(&self, _req: &ReqT, mut res: ResT, _data: Data) -> BoxFuture<ResT, Error> {
+    fn handle_ping<ReqT: Req, ResT: Res + 'static, D: Database>(&self, _req: &ReqT, mut res: ResT, _data: Arc<HandlerData<D>>) -> BoxFuture<ResT, Error> {
         res.set_pong_response();
         Ok(res).into_future().boxed()
     }
 
-    fn handle<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(&self, req: &ReqT, res: ResT, data: Data) -> BoxFuture<ResT, Error> {
+    fn handle<ReqT: Req, ResT: Res + 'static, D: Database>(&self, req: &ReqT, res: ResT, data: Arc<HandlerData<D>>) -> BoxFuture<ResT, Error> {
         match *self {
             Method::Ping => self.handle_ping(req, res, data),
             Method::Status => self.handle_status(req, res, data),
@@ -46,7 +52,7 @@ impl Method {
     }
 }
 
-pub trait Req {
+pub trait Req: Sync {
     fn method(&self) -> Method;
     fn bucket(&self) -> String;
     fn key(&self) -> String;
@@ -57,7 +63,7 @@ pub trait Res: Default + Send {
     fn set_status_response<I: Iterator<Item=(String, i32, i32, i32)>>(&mut self, items: I);
 }
 
-pub fn handle<ReqT: Req, ResT: Res + 'static, D: Database, Data: AsRef<HandlerData<D>>>(req: &ReqT, res: ResT, d: Data) -> BoxFuture<ResT, Error> {
+pub fn handle<ReqT: Req, ResT: Res + 'static, D: Database>(req: &ReqT, res: ResT, d: Arc<HandlerData<D>>) -> BoxFuture<ResT, Error> {
     req.method().handle(req, res, d)
 }
 
@@ -129,7 +135,7 @@ mod test {
 
         fn list(&self, key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error> {
             Ok(self.data.lock().unwrap().iter().filter(|k| {
-                &k.0[..key.len()] == key
+                k.0.len() >= key.len() && &k.0[..key.len()] == key
             }).map(|k| (k.0.to_vec(), k.1.clone())).collect()).into_future()
         }
     }
@@ -164,7 +170,7 @@ mod test {
     fn test_status() {
         let k = "key123";
         assert_done(move || {
-            let request = Request::new(Method::Status, Some("bucket".to_owned()), Some("key".to_owned()));
+            let request = Request::new(Method::Status, Some("bucket".to_owned()), Some("{\"content\":123,\"lastDrip\":1234567890000}".to_owned()));
 
             let database = MockDatabase::default();
             database.put(k.as_bytes(), "hello".as_bytes());

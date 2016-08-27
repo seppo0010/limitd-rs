@@ -30,6 +30,7 @@ impl DBKey for Key {
 pub enum Error {
     LevelDBError(leveldb::error::Error),
     IOError(io::Error),
+    InvalidBucket,
 }
 
 impl Error {

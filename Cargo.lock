@@ -8,6 +8,7 @@ dependencies = [
  "futures-io 0.1.0 (git+https://github.com/alexcrichton/futures-rs?rev=71801dc)",
  "futures-mio 0.1.0 (git+https://github.com/alexcrichton/futures-rs?rev=71801dc)",
  "getopts 0.2.14 (registry+https://github.com/rust-lang/crates.io-index)",
+ "json 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "leveldb 0.8.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.26 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -82,6 +83,11 @@ dependencies = [
 [[package]]
 name = "getopts"
 version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "json"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]

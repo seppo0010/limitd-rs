@@ -1,7 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
+use std::f64;
 
+use futures::{BoxFuture, Future};
+use json;
 use yaml_rust;
-use time;
+use time::{Duration, Timespec, Tm, at_utc, now_utc};
+
+use database::{Database, Error};
 
 #[derive(Debug)]
 pub enum BucketError {
@@ -15,13 +20,39 @@ impl From<yaml_rust::ScanError> for BucketError {
     }
 }
 
+pub struct BucketState {
+    content: u64,
+    last_drip: Tm,
+}
+
+impl BucketState {
+    pub fn new(content: u64, last_drip: Tm) -> BucketState {
+        BucketState {
+            content: content,
+            last_drip: last_drip,
+        }
+    }
+
+    pub fn try_new(state: Vec<u8>) -> Option<BucketState> {
+        String::from_utf8(state).ok().and_then(|s| {
+            json::parse(&*s).ok().map(|j| {
+                BucketState::new(
+                    j["content"].as_u64().unwrap_or(0),
+                    j["lastDrip"].as_i64().map(|x| at_utc(Timespec::new(x, 0))).unwrap_or(now_utc())
+                )
+            })
+        })
+    }
+}
+
+#[derive(Clone)]
 pub struct Bucket {
     name: String,
     interval: u64,
     per_interval: u64,
     purpose: Option<String>,
     size: u64,
-    until: Option<time::Tm>,
+    until: Option<Tm>,
 }
 
 impl Bucket {
@@ -34,6 +65,48 @@ impl Bucket {
             size: size,
             until: None,
         }
+    }
+
+    fn get_content(&self, state: &BucketState) -> i32 {
+        if self.per_interval == 0 || self.interval == 0 {
+            return 0;
+        }
+        let now = now_utc();
+        let delta = now - state.last_drip;
+        let drip = f64::floor((delta.num_milliseconds() as f64 * (self.per_interval as f64 / self.interval as f64))) as u64;
+        let content = (state.content + drip) as u64;
+        if content > self.size { self.size as i32 } else { content as i32 }
+    }
+
+    fn get_duration_to_completion(&self, state: &BucketState) -> Duration {
+        if self.per_interval == 0 || self.interval == 0 {
+            return Duration::zero();
+        }
+
+        let missing = self.size - state.content;
+        let ms_to_completion = f64::ceil(missing as f64 * self.interval as f64 / self.per_interval as f64) as i64;
+        Duration::milliseconds(ms_to_completion)
+    }
+
+    fn get_reset_time(&self, state: &BucketState) -> Tm {
+        let now = now_utc();
+        now + self.get_duration_to_completion(state)
+    }
+
+    fn get_key_status(&self, name: Vec<u8>, state: Vec<u8>) -> Option<(String, i32, i32, i32)> {
+        String::from_utf8(name).ok().and_then(|name| {
+            BucketState::try_new(state).map(|state| {
+                let content = self.get_content(&state);
+                let reset = self.get_reset_time(&state);
+                (name, content, reset.to_timespec().sec as i32, 0)
+            })
+        })
+    }
+    pub fn status(&self, key: &str, db: &Database) -> BoxFuture<Vec<(String, i32, i32, i32)>, Error> {
+        let bucket = self.clone();
+        db.list(key.as_bytes()).map(move |r| {
+            r.into_iter().flat_map(|el| bucket.get_key_status(el.0, el.1)).collect()
+        }).boxed()
     }
 }
 
@@ -57,6 +130,10 @@ impl Buckets {
         self.buckets.insert(name, bucket);
     }
 
+    pub fn get(&self, name: &str) -> Option<&Bucket> {
+        self.buckets.get(name)
+    }
+
     fn parse_size(&mut self, h: &BTreeMap<yaml_rust::Yaml, yaml_rust::Yaml>) -> Result<u64, BucketError> {
         match h.get(&yaml_rust::Yaml::from_str("size")) {
             Some(s) => s.as_i64().ok_or(BucketError::WrongType).map(|x| x as u64),
@@ -71,9 +148,9 @@ impl Buckets {
         }
     }
 
-    fn parse_until(&mut self, h: &BTreeMap<yaml_rust::Yaml, yaml_rust::Yaml>) -> Result<Option<time::Tm>, BucketError> {
+    fn parse_until(&mut self, h: &BTreeMap<yaml_rust::Yaml, yaml_rust::Yaml>) -> Result<Option<Tm>, BucketError> {
         match h.get(&yaml_rust::Yaml::from_str("until")) {
-            Some(s) => s.as_i64().ok_or(BucketError::WrongType).map(|x| Some(time::at_utc(time::Timespec::new(x, 0)))),
+            Some(s) => s.as_i64().ok_or(BucketError::WrongType).map(|x| Some(at_utc(Timespec::new(x, 0)))),
             _ => Ok(None),
         }
     }
