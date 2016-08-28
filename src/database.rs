@@ -43,7 +43,7 @@ impl Error {
 
     fn is_invalid_bucket(&self) -> bool {
         match *self {
-            Error::InvalidBucket(_) => true,
+            Error::InvalidBucket => true,
             _ => false,
         }
     }
