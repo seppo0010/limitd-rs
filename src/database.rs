@@ -40,11 +40,19 @@ impl Error {
             _ => false,
         }
     }
+
+    fn is_invalid_bucket(&self) -> bool {
+        match *self {
+            Error::InvalidBucket(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
-        self.is_level_db_error() && other.is_level_db_error()
+        (self.is_level_db_error() && other.is_level_db_error()) ||
+            (self.is_invalid_bucket() && other.is_invalid_bucket())
     }
 }
 

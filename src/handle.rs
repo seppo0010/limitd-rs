@@ -162,7 +162,7 @@ mod test {
     impl Drop for MockTimeGenerator {
         fn drop(&mut self) {
             // just checking that all times were used, no involuntary time shift
-            // assert!(self.time.lock().unwrap().len() == 0);
+            assert!(self.time.lock().unwrap().len() == 0);
         }
     }
 
