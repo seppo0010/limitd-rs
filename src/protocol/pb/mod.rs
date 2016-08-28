@@ -12,7 +12,7 @@ use protobuf::ProtobufError;
 use io2::{Parse, Serialize};
 
 use database::{Database, Error};
-use handle::{Req, Res, handle, Method, HandlerData};
+use handle::{Req, Res, handle, Method, HandlerData, TimeGenerator};
 use protocol::pb::request::{Request, Request_Method};
 use protocol::pb::response::{StatusResponse, StatusResponseItem, PongResponse, Response};
 
@@ -53,7 +53,7 @@ impl Res for Response {
     }
 }
 
-pub fn serve_protobuf<D: Database>(r: Request, d: Arc<HandlerData<D>>) -> BoxFuture<Response, Error> {
+pub fn serve_protobuf<D: Database, T: TimeGenerator>(r: Request, d: Arc<HandlerData<D, T>>) -> BoxFuture<Response, Error> {
     let mut response = Response::new();
     response.set_request_id(r.get_id().to_owned());
     handle(&r, response, d).boxed()

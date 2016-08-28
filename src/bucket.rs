@@ -4,7 +4,7 @@ use std::f64;
 use futures::{BoxFuture, Future};
 use json;
 use yaml_rust;
-use time::{Duration, Timespec, Tm, at_utc, now_utc};
+use time::{Duration, Timespec, Tm, at_utc};
 
 use database::{Database, Error};
 
@@ -33,12 +33,12 @@ impl BucketState {
         }
     }
 
-    pub fn try_new(state: Vec<u8>) -> Option<BucketState> {
+    pub fn try_new(state: Vec<u8>, now: &Tm) -> Option<BucketState> {
         String::from_utf8(state).ok().and_then(|s| {
             json::parse(&*s).ok().map(|j| {
                 BucketState::new(
                     j["content"].as_u64().unwrap_or(0),
-                    j["lastDrip"].as_i64().map(|x| at_utc(Timespec::new(x, 0))).unwrap_or(now_utc())
+                    j["lastDrip"].as_i64().map(|x| at_utc(Timespec::new(x / 1000, 0))).unwrap_or_else(|| now.clone())
                 )
             })
         })
@@ -51,12 +51,12 @@ pub struct Bucket {
     interval: u64,
     per_interval: u64,
     purpose: Option<String>,
-    size: u64,
+    size: i32,
     until: Option<Tm>,
 }
 
 impl Bucket {
-    pub fn new(name: String, interval: u64, per_interval: u64, size: u64) -> Bucket {
+    pub fn new(name: String, interval: u64, per_interval: u64, size: i32) -> Bucket {
         Bucket {
             name: name,
             interval: interval,
@@ -67,45 +67,47 @@ impl Bucket {
         }
     }
 
-    fn get_content(&self, state: &BucketState) -> i32 {
+    fn get_content(&self, state: &BucketState, now: &Tm) -> i32 {
         if self.per_interval == 0 || self.interval == 0 {
             return 0;
         }
-        let now = now_utc();
-        let delta = now - state.last_drip;
+        let delta = *now - state.last_drip;
         let drip = f64::floor((delta.num_milliseconds() as f64 * (self.per_interval as f64 / self.interval as f64))) as u64;
-        let content = (state.content + drip) as u64;
-        if content > self.size { self.size as i32 } else { content as i32 }
+        let content = (state.content + drip) as i32;
+        println!("{} + {}", content, drip);
+        if content > self.size { self.size } else { content }
     }
 
-    fn get_duration_to_completion(&self, state: &BucketState) -> Duration {
+    fn get_duration_to_completion(&self, state: &BucketState, now: &Tm) -> Duration {
         if self.per_interval == 0 || self.interval == 0 {
             return Duration::zero();
         }
 
-        let missing = self.size - state.content;
+        let content = self.get_content(state, now);
+        let missing = self.size - content;
         let ms_to_completion = f64::ceil(missing as f64 * self.interval as f64 / self.per_interval as f64) as i64;
         Duration::milliseconds(ms_to_completion)
     }
 
-    fn get_reset_time(&self, state: &BucketState) -> Tm {
-        let now = now_utc();
-        now + self.get_duration_to_completion(state)
+    fn get_reset_time(&self, state: &BucketState, now: &Tm) -> Tm {
+        *now + self.get_duration_to_completion(state, now)
     }
 
-    fn get_key_status(&self, name: Vec<u8>, state: Vec<u8>) -> Option<(String, i32, i32, i32)> {
+    fn get_key_status(&self, name: Vec<u8>, state: Vec<u8>, now: &Tm) -> Option<(String, i32, i32, i32)> {
         String::from_utf8(name).ok().and_then(|name| {
-            BucketState::try_new(state).map(|state| {
-                let content = self.get_content(&state);
-                let reset = self.get_reset_time(&state);
-                (name, content, reset.to_timespec().sec as i32, 0)
+            BucketState::try_new(state, now).map(|state| {
+                let content = self.get_content(&state, now);
+                let reset = self.get_reset_time(&state, now);
+                (name, content, reset.to_timespec().sec as i32, self.size)
             })
         })
     }
-    pub fn status(&self, key: &str, db: &Database) -> BoxFuture<Vec<(String, i32, i32, i32)>, Error> {
+
+    pub fn status(&self, key: &str, now: &Tm, db: &Database) -> BoxFuture<Vec<(String, i32, i32, i32)>, Error> {
         let bucket = self.clone();
-        db.list(key.as_bytes()).map(move |r| {
-            r.into_iter().flat_map(|el| bucket.get_key_status(el.0, el.1)).collect()
+        let now = now.clone();
+        db.list(self.name.as_bytes(), key.as_bytes()).map(move |r| {
+            r.into_iter().flat_map(|el| bucket.get_key_status(el.0, el.1, &now)).collect()
         }).boxed()
     }
 }
@@ -134,9 +136,9 @@ impl Buckets {
         self.buckets.get(name)
     }
 
-    fn parse_size(&mut self, h: &BTreeMap<yaml_rust::Yaml, yaml_rust::Yaml>) -> Result<u64, BucketError> {
+    fn parse_size(&mut self, h: &BTreeMap<yaml_rust::Yaml, yaml_rust::Yaml>) -> Result<i32, BucketError> {
         match h.get(&yaml_rust::Yaml::from_str("size")) {
-            Some(s) => s.as_i64().ok_or(BucketError::WrongType).map(|x| x as u64),
+            Some(s) => s.as_i64().ok_or(BucketError::WrongType).map(|x| x as i32),
             _ => Ok(0),
         }
     }

@@ -63,9 +63,9 @@ impl From<io::Error> for Error {
 }
 
 pub trait Database: Send + Sync + 'static {
-    fn put(&self, key: &[u8], value: &[u8]) -> Done<(), Error>;
-    fn get(&self, key: &[u8]) -> Done<Option<Vec<u8>>, Error>;
-    fn list(&self, key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error>;
+    fn put(&self, bucket: &[u8], key: &[u8], value: &[u8]) -> Done<(), Error>;
+    fn get(&self, bucket: &[u8], key: &[u8]) -> Done<Option<Vec<u8>>, Error>;
+    fn list(&self, bucket: &[u8], key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error>;
 }
 
 pub struct LevelDB<K: DBKey> {
@@ -79,25 +79,38 @@ impl<K: DBKey> LevelDB<K> {
         let db = try!(LDatabase::open(Path::new(path), opts));
         Ok(LevelDB { db: db })
     }
+
+    fn bucket_key(&self, bucket: &[u8], key: &[u8]) -> Vec<u8> {
+        let mut k = vec![255];
+        k.extend(bucket);
+        k.push(255);
+        k.extend(key);
+        k
+    }
+
+    fn strip_bucket(&self, bucket: &[u8], bk: &[u8]) -> Vec<u8> {
+        bk[bucket.len() + 2..].to_vec()
+    }
 }
 
 impl<K: DBKey + 'static> Database for LevelDB<K> {
-    fn put(&self, key: &[u8], value: &[u8]) -> Done<(), Error> {
+    fn put(&self, bucket: &[u8], key: &[u8], value: &[u8]) -> Done<(), Error> {
         let write_opts = WriteOptions::new();
-        self.db.put(write_opts, K::from_u8(key), value).map_err(|e| Error::LevelDBError(e)).into_future()
+        self.db.put(write_opts, K::from_u8(&*self.bucket_key(bucket, key)), value).map_err(|e| Error::LevelDBError(e)).into_future()
     }
 
-    fn get(&self, key: &[u8]) -> Done<Option<Vec<u8>>, Error> {
+    fn get(&self, bucket: &[u8], key: &[u8]) -> Done<Option<Vec<u8>>, Error> {
         let read_opts = ReadOptions::new();
-        self.db.get(read_opts, K::from_u8(key)).map_err(|e| Error::LevelDBError(e)).into_future()
+        self.db.get(read_opts, K::from_u8(&*self.bucket_key(bucket, key))).map_err(|e| Error::LevelDBError(e)).into_future()
     }
 
-    fn list(&self, key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error> {
+    fn list(&self, bucket: &[u8], key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error> {
         let read_opts = ReadOptions::new();
+        let bk = &*self.bucket_key(bucket, key);
         // this is awful, but rust's leveldb lib does not seem to provide filtering for us
         Ok(self.db.snapshot().iter(read_opts).filter(|k| {
-            K::as_slice(&k.0, |x| &x[..key.len()] == key)
-        }).map(|k| (K::as_slice(&k.0, |x| x.to_vec()), k.1)).collect()).into_future()
+            K::as_slice(&k.0, |x| &x[..bk.len()] == bk)
+        }).map(|k| (K::as_slice(&k.0, |x| self.strip_bucket(bucket, x)), k.1)).collect()).into_future()
     }
 }
 
@@ -125,12 +138,13 @@ mod test{
     #[test]
     fn put_get() {
         let db = Arc::new(LevelDB::<Key>::new(tempdir::TempDir::new("put_get").unwrap().path().to_str().unwrap()).unwrap());
+        let bucket = [5, 4, 3, 2, 1];
         let key = [0, 1, 2, 3];
         let value = [4, 6, 8, 10];
         assert_done(move ||  {
             let db = db.clone();
-            db.put(&key, &value).and_then(move |_| {
-                db.get(&key)
+            db.put(&bucket, &key, &value).and_then(move |_| {
+                db.get(&bucket, &key)
             })
         }, Ok(Some(value.to_vec())))
     }
@@ -138,14 +152,15 @@ mod test{
     #[test]
     fn put_put_get() {
         let db = Arc::new(LevelDB::<Key>::new(tempdir::TempDir::new("put_get").unwrap().path().to_str().unwrap()).unwrap());
+        let bucket = [5, 4, 3, 2, 1];
         let key = [0, 1, 2, 3];
         let value = [4, 6, 8, 10];
         let value2 = [100, 101, 102, 103];
         assert_done(move ||  {
             let db = db.clone();
-            db.put(&key, &value).and_then(move |_| {
-                db.put(&key, &value2).and_then(move |_| {
-                    db.get(&key)
+            db.put(&bucket, &key, &value).and_then(move |_| {
+                db.put(&bucket, &key, &value2).and_then(move |_| {
+                    db.get(&bucket, &key)
                 })
             })
         }, Ok(Some(value2.to_vec())))
@@ -154,24 +169,26 @@ mod test{
     #[test]
     fn get_none() {
         let db = LevelDB::<Key>::new(tempdir::TempDir::new("get_none").unwrap().path().to_str().unwrap()).unwrap();
+        let bucket = [5, 4, 3, 2, 1];
         let key = [0, 1, 2, 3];
         assert_done(move ||  {
-            db.get(&key)
+            db.get(&bucket, &key)
         }, Ok(None));
     }
 
     #[test]
     fn put_list() {
         let db = Arc::new(LevelDB::<Key>::new(tempdir::TempDir::new("put_list").unwrap().path().to_str().unwrap()).unwrap());
+        let bucket = [5, 4, 3, 2, 1];
         let key = [0, 1, 2, 3];
         let value = [4, 6, 8, 10];
         let key2 = [0, 1, 2, 3, 4];
         let value2 = [100, 101, 102, 103, 104];
         assert_done(move ||  {
             let db = db.clone();
-            db.put(&key, &value).and_then(move |_| {
-                db.put(&key2, &value2).and_then(move |_| {
-                    db.list(&key)
+            db.put(&bucket, &key, &value).and_then(move |_| {
+                db.put(&bucket, &key2, &value2).and_then(move |_| {
+                    db.list(&bucket, &key)
                 })
             })
         }, Ok(vec![(key.to_vec(), value.to_vec()), (key2.to_vec(), value2.to_vec())]));
