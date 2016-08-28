@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
-use std::f64;
+use std::{f64, str};
 
 use futures::{BoxFuture, Future};
 use json;
@@ -33,8 +33,8 @@ impl BucketState {
         }
     }
 
-    pub fn try_new(state: Vec<u8>, now: &Tm) -> Option<BucketState> {
-        String::from_utf8(state).ok().and_then(|s| {
+    pub fn try_new(state: &[u8], now: &Tm) -> Option<BucketState> {
+        str::from_utf8(state).ok().and_then(|s| {
             json::parse(&*s).ok().map(|j| {
                 BucketState::new(
                     j["content"].as_u64().unwrap_or(0),
@@ -93,21 +93,20 @@ impl Bucket {
         *now + self.get_duration_to_completion(state, now)
     }
 
-    fn get_key_status(&self, name: Vec<u8>, state: Vec<u8>, now: &Tm) -> Option<(String, i32, i32, i32)> {
-        String::from_utf8(name).ok().and_then(|name| {
+    fn get_key_status(&self, name: &[u8], state: &[u8], now: &Tm) -> Option<(String, i32, i32, i32)> {
+        str::from_utf8(name).ok().and_then(|name| {
             BucketState::try_new(state, now).map(|state| {
                 let content = self.get_content(&state, now);
                 let reset = self.get_reset_time(&state, now);
-                (name, content, reset.to_timespec().sec as i32, self.size)
+                (name.to_owned(), content, reset.to_timespec().sec as i32, self.size)
             })
         })
     }
 
-    pub fn status(&self, key: &str, now: &Tm, db: &Database) -> BoxFuture<Vec<(String, i32, i32, i32)>, Error> {
+    pub fn status(&self, key: &str, now: Tm, db: &Database) -> BoxFuture<Vec<(String, i32, i32, i32)>, Error> {
         let bucket = self.clone();
-        let now = now.clone();
         db.list(self.name.as_bytes(), key.as_bytes()).map(move |r| {
-            r.into_iter().flat_map(|el| bucket.get_key_status(el.0, el.1, &now)).collect()
+            r.into_iter().flat_map(|el| bucket.get_key_status(&*el.0, &*el.1, &now)).collect()
         }).boxed()
     }
 }
@@ -207,7 +206,7 @@ impl Buckets {
 #[cfg(test)]
 mod test {
     use time;
-    use super::Buckets;
+    use super::{BucketState, Buckets, Bucket};
 
     #[test]
     fn bucket_config() {
@@ -247,5 +246,86 @@ opt:
         assert_eq!(b.buckets.get("opt").unwrap().per_interval, 0);
         assert_eq!(b.buckets.get("opt").unwrap().purpose, None);
         assert_eq!(b.buckets.get("opt").unwrap().until, None);
+    }
+
+    #[test]
+    fn bucket_state() {
+        let now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let last_drip = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let content = 12;
+        let state = BucketState::try_new(format!("{{\"content\":12,\"lastDrip\":{}}}", last_drip.to_timespec().sec * 1000).as_bytes(), &now).unwrap();
+        assert_eq!(state.content, content);
+        assert_eq!(state.last_drip, last_drip);
+    }
+
+    #[test]
+    fn bucket_state_defaults() {
+        let now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let state = BucketState::try_new("{}".as_bytes(), &now).unwrap();
+        assert_eq!(state.content, 0);
+        assert_eq!(state.last_drip, now);
+    }
+
+    #[test]
+    fn bucket_state_invalid_json() {
+        let now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        assert!(BucketState::try_new("".as_bytes(), &now).is_none());
+    }
+
+    #[test]
+    fn get_content_same_time() {
+        let now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let state = BucketState::try_new(format!("{{\"content\":5,\"lastDrip\":{}}}", now.to_timespec().sec * 1000).as_bytes(), &now).unwrap();
+        let bucket = Bucket::new("bucket".to_owned(), 1000, 1, 10);
+        assert_eq!(bucket.get_content(&state, &now), 5);
+        assert_eq!(bucket.get_duration_to_completion(&state, &now), time::Duration::milliseconds(5000));
+    }
+
+    #[test]
+    fn get_content_partial_interval() {
+        let mut now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let state = BucketState::try_new(format!("{{\"content\":5,\"lastDrip\":{}}}", now.to_timespec().sec * 1000).as_bytes(), &now).unwrap();
+        now.tm_nsec = 500000;
+        let bucket = Bucket::new("bucket".to_owned(), 1000, 1, 10);
+        assert_eq!(bucket.get_content(&state, &now), 5);
+        assert_eq!(bucket.get_duration_to_completion(&state, &now), time::Duration::milliseconds(5000));
+    }
+
+    #[test]
+    fn get_content_interval() {
+        let mut now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let state = BucketState::try_new(format!("{{\"content\":5,\"lastDrip\":{}}}", now.to_timespec().sec * 1000).as_bytes(), &now).unwrap();
+        now.tm_sec += 2;
+        let bucket = Bucket::new("bucket".to_owned(), 1000, 1, 10);
+        assert_eq!(bucket.get_content(&state, &now), 7);
+        assert_eq!(bucket.get_duration_to_completion(&state, &now), time::Duration::milliseconds(3000));
+    }
+
+    #[test]
+    fn get_content_max_size() {
+        let mut now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let state = BucketState::try_new(format!("{{\"content\":5,\"lastDrip\":{}}}", now.to_timespec().sec * 1000).as_bytes(), &now).unwrap();
+        now.tm_sec += 20;
+        let bucket = Bucket::new("bucket".to_owned(), 1000, 1, 10);
+        assert_eq!(bucket.get_content(&state, &now), 10);
+        assert_eq!(bucket.get_duration_to_completion(&state, &now), time::Duration::milliseconds(0));
+    }
+
+    #[test]
+    fn get_key_status() {
+        let now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let state = format!("{{\"content\":5,\"lastDrip\":{}}}", now.to_timespec().sec * 1000);
+        let bucket = Bucket::new("bucket".to_owned(), 1000, 1, 10);
+        assert_eq!(
+            bucket.get_key_status("key".as_bytes(), state.as_bytes(), &now).unwrap(),
+            ("key".to_owned(), 5, 1471823435, 10)
+        );
+    }
+
+    #[test]
+    fn get_key_status_invalid_state() {
+        let now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let bucket = Bucket::new("bucket".to_owned(), 1000, 1, 10);
+        assert!(bucket.get_key_status("key".as_bytes(), "".as_bytes(), &now).is_none());
     }
 }

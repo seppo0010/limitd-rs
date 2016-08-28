@@ -52,7 +52,7 @@ impl Method {
         let key = req.key();
         let bucket = data.buckets.get(&*req.bucket());
         match bucket {
-            Some(b) => b.status(&*key, &d.time.now(), &d.db).map(|i| {
+            Some(b) => b.status(&*key, d.time.now(), &d.db).map(|i| {
                 res.set_status_response(i.into_iter());
                 res
             }).boxed(),
