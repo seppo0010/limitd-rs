@@ -109,6 +109,9 @@ impl Bucket {
             r.into_iter().flat_map(|el| bucket.get_key_status(&*el.0, &*el.1, &now)).collect()
         }).boxed()
     }
+
+    pub fn put(&self, key: &str, count: Option<i32>) {
+    }
 }
 
 #[derive(Default)]

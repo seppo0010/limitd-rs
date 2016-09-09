@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use futures::{BoxFuture, IntoFuture, Future, failed};
+use futures::{BoxFuture, IntoFuture, Future, finished, failed};
 
 use bucket::Buckets;
 use database::{Database, Error};
@@ -44,9 +44,23 @@ impl <D: Database> HandlerData<D, DefaultTimeGenerator> {
 pub enum Method {
     Ping,
     Status,
+    Put,
 }
 
 impl Method {
+    fn handle_put<ReqT: Req, ResT: Res + 'static, D: Database, T: TimeGenerator>(&self, req: &ReqT, mut res: ResT, data: Arc<HandlerData<D, T>>) -> BoxFuture<ResT, Error> {
+        let d = data.clone();
+        let key = req.key();
+        let bucket = data.buckets.get(&*req.bucket());
+        match bucket {
+            Some(b) => {
+                b.put(&*key, if req.all() { None } else { Some(req.count() )});
+                finished(res).boxed()
+            },
+            None => failed(Error::InvalidBucket).boxed()
+        }
+    }
+
     fn handle_status<ReqT: Req, ResT: Res + 'static, D: Database, T: TimeGenerator>(&self, req: &ReqT, mut res: ResT, data: Arc<HandlerData<D, T>>) -> BoxFuture<ResT, Error> {
         let d = data.clone();
         let key = req.key();
@@ -69,6 +83,7 @@ impl Method {
         match *self {
             Method::Ping => self.handle_ping(req, res, data),
             Method::Status => self.handle_status(req, res, data),
+            Method::Put => self.handle_put(req, res, data),
         }
     }
 }
@@ -77,6 +92,8 @@ pub trait Req: Sync {
     fn method(&self) -> Method;
     fn bucket(&self) -> String;
     fn key(&self) -> String;
+    fn all(&self) -> bool;
+    fn count(&self) -> i32;
 }
 
 pub trait Res: Default + Send {
@@ -106,6 +123,8 @@ mod test {
         method: Method,
         bucket: Option<String>,
         key: Option<String>,
+        all: Option<bool>,
+        count: Option<i32>,
     }
 
     impl Request {
@@ -114,6 +133,8 @@ mod test {
                 method: method,
                 bucket: bucket,
                 key: key,
+                all: None,
+                count: None,
             }
         }
     }
@@ -122,6 +143,8 @@ mod test {
         fn method(&self) -> Method { self.method.clone() }
         fn bucket(&self) -> String { self.bucket.clone().unwrap() }
         fn key(&self) -> String { self.key.clone().unwrap() }
+        fn all(&self) -> bool { self.all.unwrap() }
+        fn count(&self) -> i32 { self.count.unwrap() }
     }
 
     #[derive(Default)]

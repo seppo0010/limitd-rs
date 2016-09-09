@@ -32,6 +32,14 @@ impl Req for Request {
     fn key(&self) -> String {
         self.get_key().to_owned()
     }
+
+    fn all(&self) -> bool {
+        self.get_all()
+    }
+
+    fn count(&self) -> i32 {
+        self.get_count()
+    }
 }
 
 impl Res for Response {
