@@ -54,7 +54,7 @@ impl Method {
         let bucket = data.buckets.get(&*req.bucket());
         match bucket {
             Some(b) => {
-                b.put(&*key, if req.all() { None } else { Some(req.count() )});
+                b.put(key, if req.all() { None } else { Some(req.count() )}, d.time.now(), &d.db);
                 finished(res).boxed()
             },
             None => failed(Error::InvalidBucket).boxed()

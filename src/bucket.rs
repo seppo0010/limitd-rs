@@ -21,12 +21,12 @@ impl From<yaml_rust::ScanError> for BucketError {
 }
 
 pub struct BucketState {
-    content: u64,
+    content: i32,
     last_drip: Tm,
 }
 
 impl BucketState {
-    pub fn new(content: u64, last_drip: Tm) -> BucketState {
+    pub fn new(content: i32, last_drip: Tm) -> BucketState {
         BucketState {
             content: content,
             last_drip: last_drip,
@@ -37,11 +37,15 @@ impl BucketState {
         str::from_utf8(state).ok().and_then(|s| {
             json::parse(&*s).ok().map(|j| {
                 BucketState::new(
-                    j["content"].as_u64().unwrap_or(0),
+                    j["content"].as_i32().unwrap_or(0),
                     j["lastDrip"].as_i64().map(|x| at_utc(Timespec::new(x / 1000, 0))).unwrap_or_else(|| now.clone())
                 )
             })
         })
+    }
+
+    pub fn serialize(&self) -> String {
+        format!("{{\"content\":{},\"lastDrop\":{}}}", self.content, self.last_drip.to_timespec().sec * 1000)
     }
 }
 
@@ -72,9 +76,8 @@ impl Bucket {
             return 0;
         }
         let delta = *now - state.last_drip;
-        let drip = f64::floor((delta.num_milliseconds() as f64 * (self.per_interval as f64 / self.interval as f64))) as u64;
-        let content = (state.content + drip) as i32;
-        println!("{} + {}", content, drip);
+        let drip = f64::floor((delta.num_milliseconds() as f64 * (self.per_interval as f64 / self.interval as f64))) as i32;
+        let content = state.content + drip;
         if content > self.size { self.size } else { content }
     }
 
@@ -110,7 +113,18 @@ impl Bucket {
         }).boxed()
     }
 
-    pub fn put(&self, key: &str, count: Option<i32>) {
+    pub fn put(&self, key: String, count: Option<i32>, now: Tm, db: &Database) -> BoxFuture<(), Error> {
+        let bucket = self.clone();
+        let k = key.clone();
+        db.get(self.name.as_bytes(), key.as_bytes()).and_then(move |state| {
+            BucketState::try_new(&*state.unwrap_or("{}".as_bytes().to_vec()), &now).map(move |mut state| {
+                state.content += count.unwrap_or(bucket.size);
+                if state.content > bucket.size {
+                    state.content = bucket.size;
+                }
+                db.put("".as_bytes(), "".as_bytes(), "".as_bytes()).map(|_| ())
+            }).unwrap()
+        }).boxed()
     }
 }
 
