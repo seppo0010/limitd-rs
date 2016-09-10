@@ -9,7 +9,7 @@ use leveldb::options::{Options, ReadOptions, WriteOptions};
 use leveldb::snapshots::Snapshots;
 use db_key::Key as DBKey;
 
-use futures::{IntoFuture, Done};
+use futures::{IntoFuture, BoxFuture, Future};
 
 // Not quite a fan of this implementation
 pub struct Key {
@@ -31,6 +31,7 @@ pub enum Error {
     LevelDBError(leveldb::error::Error),
     IOError(io::Error),
     InvalidBucket,
+    InvalidKey,
 }
 
 impl Error {
@@ -71,9 +72,9 @@ impl From<io::Error> for Error {
 }
 
 pub trait Database: Send + Sync + 'static {
-    fn put(&self, bucket: &[u8], key: &[u8], value: &[u8]) -> Done<(), Error>;
-    fn get(&self, bucket: &[u8], key: &[u8]) -> Done<Option<Vec<u8>>, Error>;
-    fn list(&self, bucket: &[u8], key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error>;
+    fn put(&self, bucket: &[u8], key: &[u8], value: &[u8]) -> BoxFuture<(), Error>;
+    fn get(&self, bucket: &[u8], key: &[u8]) -> BoxFuture<Option<Vec<u8>>, Error>;
+    fn list(&self, bucket: &[u8], key: &[u8]) -> BoxFuture<Vec<(Vec<u8>, Vec<u8>)>, Error>;
 }
 
 pub struct LevelDB<K: DBKey> {
@@ -102,23 +103,23 @@ impl<K: DBKey> LevelDB<K> {
 }
 
 impl<K: DBKey + 'static> Database for LevelDB<K> {
-    fn put(&self, bucket: &[u8], key: &[u8], value: &[u8]) -> Done<(), Error> {
+    fn put(&self, bucket: &[u8], key: &[u8], value: &[u8]) -> BoxFuture<(), Error> {
         let write_opts = WriteOptions::new();
-        self.db.put(write_opts, K::from_u8(&*self.bucket_key(bucket, key)), value).map_err(|e| Error::LevelDBError(e)).into_future()
+        self.db.put(write_opts, K::from_u8(&*self.bucket_key(bucket, key)), value).map_err(|e| Error::LevelDBError(e)).into_future().boxed()
     }
 
-    fn get(&self, bucket: &[u8], key: &[u8]) -> Done<Option<Vec<u8>>, Error> {
+    fn get(&self, bucket: &[u8], key: &[u8]) -> BoxFuture<Option<Vec<u8>>, Error> {
         let read_opts = ReadOptions::new();
-        self.db.get(read_opts, K::from_u8(&*self.bucket_key(bucket, key))).map_err(|e| Error::LevelDBError(e)).into_future()
+        self.db.get(read_opts, K::from_u8(&*self.bucket_key(bucket, key))).map_err(|e| Error::LevelDBError(e)).into_future().boxed()
     }
 
-    fn list(&self, bucket: &[u8], key: &[u8]) -> Done<Vec<(Vec<u8>, Vec<u8>)>, Error> {
+    fn list(&self, bucket: &[u8], key: &[u8]) -> BoxFuture<Vec<(Vec<u8>, Vec<u8>)>, Error> {
         let read_opts = ReadOptions::new();
         let bk = &*self.bucket_key(bucket, key);
         // this is awful, but rust's leveldb lib does not seem to provide filtering for us
         Ok(self.db.snapshot().iter(read_opts).filter(|k| {
             K::as_slice(&k.0, |x| &x[..bk.len()] == bk)
-        }).map(|k| (K::as_slice(&k.0, |x| self.strip_bucket(bucket, x)), k.1)).collect()).into_future()
+        }).map(|k| (K::as_slice(&k.0, |x| self.strip_bucket(bucket, x)), k.1)).collect()).into_future().boxed()
     }
 }
 

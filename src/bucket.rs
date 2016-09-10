@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::{f64, str};
 
-use futures::{BoxFuture, Future};
+use futures::{BoxFuture, IntoFuture, Future};
 use json;
 use yaml_rust;
 use time::{Duration, Timespec, Tm, at_utc};
@@ -72,7 +72,11 @@ impl Bucket {
         }
     }
 
-    fn get_content(&self, state: &BucketState, now: &Tm) -> i32 {
+    pub fn get_size(&self) -> i32 {
+        self.size
+    }
+
+    pub fn get_content(&self, state: &BucketState, now: &Tm) -> i32 {
         if self.per_interval == 0 || self.interval == 0 {
             return 0;
         }
@@ -93,7 +97,7 @@ impl Bucket {
         Duration::milliseconds(ms_to_completion)
     }
 
-    fn get_reset_time(&self, state: &BucketState, now: &Tm) -> Tm {
+    pub fn get_reset_time(&self, state: &BucketState, now: &Tm) -> Tm {
         *now + self.get_duration_to_completion(state, now)
     }
 
@@ -107,6 +111,12 @@ impl Bucket {
         })
     }
 
+    pub fn get_key_state<D: Database>(&self, key: &[u8], now: Tm, db: Arc<D>) -> BoxFuture<BucketState, Error> {
+        db.get(self.name.as_bytes(), key).and_then(move |state| {
+            BucketState::try_new(&*state.unwrap_or("{}".as_bytes().to_vec()), &now).ok_or(Error::InvalidKey).into_future()
+        }).boxed()
+    }
+
     pub fn status<D: Database>(&self, key: &str, now: Tm, db: Arc<D>) -> BoxFuture<Vec<(String, i32, i32, i32)>, Error> {
         let bucket = self.clone();
         db.list(self.name.as_bytes(), key.as_bytes()).map(move |r| {
@@ -114,19 +124,17 @@ impl Bucket {
         }).boxed()
     }
 
-    pub fn put<D: Database>(&self, key: String, count: Option<i32>, now: Tm, db: Arc<D>) -> BoxFuture<(), Error> {
+    pub fn put<D: Database>(&self, key: &[u8], count: Option<i32>, now: Tm, db: Arc<D>) -> BoxFuture<(), Error> {
         // TODO: atomicity
         // TODO: ttl
         let bucket = self.clone();
-        let k = key.clone();
-        db.get(self.name.as_bytes(), key.as_bytes()).and_then(move |state| {
-            BucketState::try_new(&*state.unwrap_or("{}".as_bytes().to_vec()), &now).map(move |mut state| {
-                state.content += count.unwrap_or(bucket.size);
-                if state.content > bucket.size {
-                    state.content = bucket.size;
-                }
-                db.put(bucket.name.as_bytes(), k.as_bytes(), state.serialize().as_bytes()).map(|_| ())
-            }).unwrap()
+        let k = key.to_owned();
+        self.get_key_state(key, now, db.clone()).and_then(move |mut state| {
+            state.content += count.unwrap_or(bucket.size);
+            if state.content > bucket.size {
+                state.content = bucket.size;
+            }
+            db.put(bucket.name.as_bytes(), &*k, state.serialize().as_bytes()).map(|_| ()).boxed()
         }).boxed()
     }
 }
@@ -329,6 +337,13 @@ opt:
         let bucket = Bucket::new("bucket".to_owned(), 1000, 1, 10);
         assert_eq!(bucket.get_content(&state, &now), 10);
         assert_eq!(bucket.get_duration_to_completion(&state, &now), time::Duration::milliseconds(0));
+    }
+
+    #[test]
+    fn serialize() {
+        let now = time::Tm { tm_sec: 30, tm_min: 50, tm_hour: 23, tm_mday: 21, tm_mon: 7, tm_year: 116, tm_wday: 0, tm_yday: 233, tm_isdst: 0, tm_utcoff: 0, tm_nsec: 0 };
+        let state = BucketState::try_new(format!("{{\"content\":5,\"lastDrip\":{}}}", now.to_timespec().sec * 1000).as_bytes(), &now).unwrap();
+        assert_eq!(state.serialize(), "{\"content\":5,\"lastDrop\":1471823430000}");
     }
 
     #[test]

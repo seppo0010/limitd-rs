@@ -14,7 +14,7 @@ use io2::{Parse, Serialize};
 use database::{Database, Error};
 use handle::{Req, Res, handle, Method, HandlerData, TimeGenerator};
 use protocol::pb::request::{Request, Request_Method};
-use protocol::pb::response::{StatusResponse, StatusResponseItem, PongResponse, Response};
+use protocol::pb::response::{StatusResponse, StatusResponseItem, PongResponse, PutResponse, Response};
 
 impl Req for Request {
     fn method(&self) -> Method {
@@ -58,6 +58,14 @@ impl Res for Response {
             i
         }).collect());
         self.set_statusResponse(status_response)
+    }
+
+    fn set_put_response(&mut self, content: i32, reset_time: i32, size: i32) {
+        let mut put_response = PutResponse::new();
+        put_response.set_remaining(content);
+        put_response.set_reset(reset_time);
+        put_response.set_limit(size);
+        self.set_putResponse(put_response);
     }
 }
 
