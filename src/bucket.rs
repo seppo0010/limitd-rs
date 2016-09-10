@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use std::{f64, str};
 
 use futures::{BoxFuture, Future};
@@ -106,14 +107,16 @@ impl Bucket {
         })
     }
 
-    pub fn status(&self, key: &str, now: Tm, db: &Database) -> BoxFuture<Vec<(String, i32, i32, i32)>, Error> {
+    pub fn status<D: Database>(&self, key: &str, now: Tm, db: Arc<D>) -> BoxFuture<Vec<(String, i32, i32, i32)>, Error> {
         let bucket = self.clone();
         db.list(self.name.as_bytes(), key.as_bytes()).map(move |r| {
             r.into_iter().flat_map(|el| bucket.get_key_status(&*el.0, &*el.1, &now)).collect()
         }).boxed()
     }
 
-    pub fn put(&self, key: String, count: Option<i32>, now: Tm, db: &Database) -> BoxFuture<(), Error> {
+    pub fn put<D: Database>(&self, key: String, count: Option<i32>, now: Tm, db: Arc<D>) -> BoxFuture<(), Error> {
+        // TODO: atomicity
+        // TODO: ttl
         let bucket = self.clone();
         let k = key.clone();
         db.get(self.name.as_bytes(), key.as_bytes()).and_then(move |state| {
@@ -122,7 +125,7 @@ impl Bucket {
                 if state.content > bucket.size {
                     state.content = bucket.size;
                 }
-                db.put("".as_bytes(), "".as_bytes(), "".as_bytes()).map(|_| ())
+                db.put(bucket.name.as_bytes(), k.as_bytes(), state.serialize().as_bytes()).map(|_| ())
             }).unwrap()
         }).boxed()
     }

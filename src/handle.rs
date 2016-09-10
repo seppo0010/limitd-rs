@@ -19,7 +19,7 @@ impl TimeGenerator for DefaultTimeGenerator {
 }
 
 pub struct HandlerData<D: Database, T: TimeGenerator> {
-    db: D,
+    db: Arc<D>,
     buckets: Buckets,
     time: T,
 }
@@ -27,7 +27,7 @@ pub struct HandlerData<D: Database, T: TimeGenerator> {
 impl <D: Database, T: TimeGenerator> HandlerData<D, T> {
     pub fn new_t(db: D, buckets: Buckets, time: T) -> Self {
         HandlerData {
-            db: db,
+            db: Arc::new(db),
             buckets: buckets,
             time: time,
         }
@@ -54,7 +54,7 @@ impl Method {
         let bucket = data.buckets.get(&*req.bucket());
         match bucket {
             Some(b) => {
-                b.put(key, if req.all() { None } else { Some(req.count() )}, d.time.now(), &d.db);
+                b.put(key, if req.all() { None } else { Some(req.count() )}, d.time.now(), d.db.clone());
                 finished(res).boxed()
             },
             None => failed(Error::InvalidBucket).boxed()
@@ -66,7 +66,7 @@ impl Method {
         let key = req.key();
         let bucket = data.buckets.get(&*req.bucket());
         match bucket {
-            Some(b) => b.status(&*key, d.time.now(), &d.db).map(|i| {
+            Some(b) => b.status(&*key, d.time.now(), d.db.clone()).map(|i| {
                 res.set_status_response(i.into_iter());
                 res
             }).boxed(),
